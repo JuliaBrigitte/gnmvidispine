@@ -1,0 +1,77 @@
+timeOfLastBuild: 16.01.2023:21:08:26
+buildTime: 55.0 s
+githubRepo: https://github.com/fredex42/gnmvidispine#refs/heads/master
+Number of build steps: 4
+
+Step number: 1
+Name: Prepare build
+
+Name: script.content, Value: #!/bin/bash -e
+
+sudo -S /usr/local/bin/awsconfig_cleanup.sh
+
+mkdir -p dist/
+chmod -R 777 dist/
+Name: teamcity.step.mode, Value: default
+Name: use.custom.script, Value: true
+
+
+Step number: 2
+Name: Build and package Py2.7
+
+Name: plugin.docker.imageId, Value: guardianmultimedia/centos-python:2
+Name: script.content, Value: bash -e ./ciscripts/test-and-package-27.sh
+Name: teamcity.step.mode, Value: execute_if_failed
+Name: use.custom.script, Value: true
+
+
+Step number: 3
+Name: Build and package Py3.6
+
+Name: plugin.docker.imageId, Value: andyg42/centos-py36build
+Name: script.content, Value: bash -e ciscripts/test-and-package-36.sh
+Name: teamcity.step.mode, Value: execute_if_failed
+Name: use.custom.script, Value: true
+
+
+Step number: 4
+Name: Upload to S3
+
+Name: script.content, Value: #!/bin/bash
+
+declare -x AWS_CONFIG_FILE=temp-credentials.conf
+cat > temp-credentials.conf << EOF
+[profile multimedia-crossaccount]
+role_arn = arn:aws:iam::855023211239:role/deploytools-imagepull
+region = eu-west-1
+credential_source = Ec2InstanceMetadata
+EOF
+
+declare -x AWS_PROFILE=multimedia-crossaccount
+
+EXITCODE=0
+for x in `ls dist/`; do
+  echo Uploading $x...
+  aws s3 cp --acl public-read dist/$x s3://gnm-multimedia-deployables/gnmvidispine/%build.number%/
+  if [ "$?" != "0" ]; then EXITCODE=$?; fi
+done
+
+if [ "${BUILD_BRANCH}" == "refs/heads/master" ]; then
+  echo Uploading to master...
+  for x in `ls dist/`; do
+    echo Uploading $x...
+    aws s3 cp --acl public-read dist/$x s3://gnm-multimedia-deployables/gnmvidispine/master/
+    if [ "$?" != "0" ]; then EXITCODE=$?; fi
+  done
+else
+  echo Building on ${BUILD_BRANCH}, not uploading to master
+fi
+
+rm -f temp-credentials.conf
+exit $EXITCODE
+Name: teamcity.step.mode, Value: default
+Name: use.custom.script, Value: true
+
+
+languages:
+buildNumber: 299
